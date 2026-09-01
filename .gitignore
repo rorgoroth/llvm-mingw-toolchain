@@ -1,5 +1,4 @@
-llvm-project
-mingw-w64
 *.tar.zst
-llvm-x86_64-w64-mingw32
-build
+/llvm-project
+/llvm-x86_64-w64-mingw32
+/mingw-w64
