@@ -1,0 +1,4 @@
+*.tar.zst
+/llvm-project
+/llvm-x86_64-w64-mingw32
+/mingw-w64

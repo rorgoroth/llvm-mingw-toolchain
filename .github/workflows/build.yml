@@ -1,0 +1,42 @@
+name: build
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup_alpine
+        uses: rorgoroth/setup-alpine@develop
+        with:
+          branch: edge
+          extra-repositories: |
+            http://dl-cdn.alpinelinux.org/alpine/edge/testing
+
+      - name: setup_git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global init.defaultBranch main
+
+      - name: add_packages
+        run: |
+          apk add alpine-sdk atool axel bash clang coreutils cmake curl gawk git libc++ linux-headers lld make openssh openssl python3 samurai wget zstd
+        shell: alpine.sh --root {0}
+
+      - name: run_build
+        run: |
+          sh build.sh
+        shell: alpine.sh {0}
+
+      - name: upload_packages
+        id: upload_release
+        uses: svenstaro/upload-release-action@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: 23.1.0.tar.zst
+          tag: 23.1.0
+          overwrite: true
+          file_glob: true
