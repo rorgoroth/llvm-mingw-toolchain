@@ -47,7 +47,7 @@ PREFIX="$(cd "$DEST" && pwd)"
 # ===========================================================================
 # Stage 1: build clang/llvm
 # ===========================================================================
-echo "=== [1/10] Building LLVM/clang/lld ==="
+echo "=== [1/8] Building LLVM/clang/lld ==="
 
 if [ ! -d llvm-project ]; then
     git clone --depth 1 --no-tags --branch "$LLVM_TAG" "$LLVM_REPOSITORY" llvm-project
@@ -80,7 +80,7 @@ mkdir -p "llvm-project/llvm/$LLVM_BUILDDIR"
         -DLLVM_ENABLE_LIBXML2=OFF \
         -DLLVM_ENABLE_ZLIB=OFF \
         -DLLVM_ENABLE_WARNINGS=OFF \
-		-DLLVM_TOOLCHAIN_TOOLS="llvm-ar;llvm-ranlib;llvm-objdump;llvm-rc;llvm-cvtres;llvm-nm;llvm-strings;llvm-readobj;llvm-dlltool;llvm-pdbutil;llvm-objcopy;llvm-strip;llvm-cov;llvm-profdata;llvm-addr2line;llvm-symbolizer;llvm-windres;llvm-ml;llvm-readelf;llvm-size;llvm-cxxfilt;llvm-lib" \
+        -DLLVM_TOOLCHAIN_TOOLS="llvm-ar;llvm-ranlib;llvm-objdump;llvm-rc;llvm-cvtres;llvm-nm;llvm-strings;llvm-readobj;llvm-dlltool;llvm-pdbutil;llvm-objcopy;llvm-strip;llvm-cov;llvm-profdata;llvm-addr2line;llvm-symbolizer;llvm-windres;llvm-ml;llvm-readelf;llvm-size;llvm-cxxfilt;llvm-lib" \
         ..
     cmake --build .
     cmake --install . --strip
@@ -91,7 +91,7 @@ cp llvm-project/LICENSE.TXT "$PREFIX"
 # ===========================================================================
 # Stage 2: strip llvm
 # ===========================================================================
-echo "=== [2/10] Stripping unwanted LLVM install files ==="
+echo "=== [2/8] Stripping unwanted LLVM install files ==="
 
 (
     cd "$PREFIX/bin"
@@ -158,7 +158,7 @@ rm -rf "$PREFIX/include/clang" "$PREFIX/include/clang-c" "$PREFIX/include/clang-
 # ===========================================================================
 # Stage 3: install wrappers
 # ===========================================================================
-echo "=== [3/10] Installing target wrapper scripts/binaries ==="
+echo "=== [3/8] Installing target wrapper scripts/binaries ==="
 
 mkdir -p "$PREFIX/bin"
 cp wrappers/*-wrapper.sh "$PREFIX/bin"
@@ -199,7 +199,7 @@ $CC wrappers/llvm-wrapper.c -o "$PREFIX/bin/llvm-wrapper" -O2 -Wl,-s
 # ===========================================================================
 # Stage 4: build mingw-w64 tools
 # ===========================================================================
-echo "=== [4/10] Building mingw-w64 host tools (gendef, widl) ==="
+echo "=== [4/8] Building mingw-w64 host tools (gendef, widl) ==="
 
 if [ ! -d mingw-w64 ]; then
     git clone https://github.com/mingw-w64/mingw-w64
@@ -241,7 +241,7 @@ command -v gmake >/dev/null && MAKE=gmake
 # ===========================================================================
 # Stage 5: build mingw-w64 headers/CRT/import-libs
 # ===========================================================================
-echo "=== [5/10] Building mingw-w64 headers and CRT ==="
+echo "=== [5/8] Building mingw-w64 headers and CRT ==="
 
 export PATH="$PREFIX/bin:$PATH"
 unset CC
@@ -287,7 +287,7 @@ mkdir -p "$PREFIX/$ARCH-w64-mingw32/share/mingw32"
 # ===========================================================================
 # Stage 6: build-compiler-rt builtins
 # ===========================================================================
-echo "=== [6/10] Building compiler-rt builtins ==="
+echo "=== [6/8] Building compiler-rt builtins ==="
 
 CLANG_RESOURCE_DIR="$("$PREFIX/bin/clang" --print-resource-dir)"
 
@@ -341,6 +341,13 @@ build_compiler_rt_arch() {
             -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
             -DSANITIZER_CXX_ABI=libc++ \
+            -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+            -DCOMPILER_RT_BUILD_XRAY=OFF \
+            -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+            -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+            -DCOMPILER_RT_BUILD_ORC=OFF \
+            -DCOMPILER_RT_BUILD_GWP_ASAN=OFF \
+            -DCOMPILER_RT_BUILD_PROFILE=OFF \
             -DCMAKE_C_FLAGS_INIT="" \
             -DCMAKE_CXX_FLAGS_INIT="" \
             -DCMAKE_ASM_FLAGS_INIT="" \
@@ -349,15 +356,6 @@ build_compiler_rt_arch() {
         cmake --install . --prefix "$INSTALL_PREFIX"
     )
     mkdir -p "$PREFIX/$ARCH-w64-mingw32/bin"
-
-    if [ -n "$build_suffix" ]; then
-        # sanitizers pass
-        if [ -z "$IS_UCRT" ]; then
-            rm -f "$INSTALL_PREFIX/lib/windows/libclang_rt.asan"*
-        else
-            mv "$INSTALL_PREFIX/lib/windows/"*.dll "$PREFIX/$ARCH-w64-mingw32/bin"
-        fi
-    fi
 
     if [ "$INSTALL_PREFIX" != "$CLANG_RESOURCE_DIR" ]; then
         rm -rf "$INSTALL_PREFIX/include"
@@ -371,7 +369,7 @@ build_compiler_rt_arch "../lib/builtins" "" TRUE
 # ===========================================================================
 # Stage 7: build-libcxx
 # ===========================================================================
-echo "=== [7/10] Building libc++/libc++abi/libunwind ==="
+echo "=== [7/8] Building libc++/libc++abi/libunwind ==="
 
 (
     cd llvm-project/runtimes
@@ -392,10 +390,10 @@ echo "=== [7/10] Building libc++/libc++abi/libunwind ==="
         -DCMAKE_RANLIB="$PREFIX/bin/llvm-ranlib" \
         -DLLVM_ENABLE_RUNTIMES="libunwind;libcxxabi;libcxx" \
         -DLIBUNWIND_USE_COMPILER_RT=TRUE \
-        -DLIBUNWIND_ENABLE_SHARED=ON \
+        -DLIBUNWIND_ENABLE_SHARED=OFF \
         -DLIBUNWIND_ENABLE_STATIC=ON \
         -DLIBCXX_USE_COMPILER_RT=ON \
-        -DLIBCXX_ENABLE_SHARED=ON \
+        -DLIBCXX_ENABLE_SHARED=OFF \
         -DLIBCXX_ENABLE_STATIC=ON \
         -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=TRUE \
         -DLIBCXX_CXX_ABI=libcxxabi \
@@ -421,7 +419,7 @@ echo "=== [7/10] Building libc++/libc++abi/libunwind ==="
 # ===========================================================================
 # Stage 8: build mingw-w64 libraries
 # ===========================================================================
-echo "=== [8/10] Building winpthreads ==="
+echo "=== [8/8] Building winpthreads ==="
 
 (
     cd mingw-w64/mingw-w64-libraries/winpthreads
@@ -443,49 +441,6 @@ echo "=== [8/10] Building winpthreads ==="
 mkdir -p "$PREFIX/$ARCH-w64-mingw32/share/mingw32"
 install -m644 mingw-w64/mingw-w64-libraries/winpthreads/COPYING \
     "$PREFIX/$ARCH-w64-mingw32/share/mingw32/COPYING.winpthreads.txt"
-
-
-# ===========================================================================
-# Stage 9: build-compiler-rt sanitizers
-# ===========================================================================
-echo "=== [9/10] Building compiler-rt sanitizers ==="
-build_compiler_rt_arch ".." "-sanitizers" FALSE
-
-
-# ===========================================================================
-# Stage 10: build openmp
-# ===========================================================================
-echo "=== [10/10] Building OpenMP runtime ==="
-
-(
-    cd llvm-project/runtimes
-    mkdir -p build-openmp-$ARCH
-    cd build-openmp-$ARCH
-    rm -rf CMake*
-    cmake \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="$PREFIX/$ARCH-w64-mingw32" \
-        -DCMAKE_C_COMPILER=$ARCH-w64-mingw32-clang \
-        -DCMAKE_CXX_COMPILER=$ARCH-w64-mingw32-clang++ \
-        -DCMAKE_RC_COMPILER=$ARCH-w64-mingw32-windres \
-        -DCMAKE_ASM_MASM_COMPILER=llvm-ml \
-        -DCMAKE_SYSTEM_NAME=Windows \
-        -DCMAKE_AR="$PREFIX/bin/llvm-ar" \
-        -DCMAKE_RANLIB="$PREFIX/bin/llvm-ranlib" \
-        -DLLVM_ENABLE_RUNTIMES="openmp" \
-        -DLIBOMP_ENABLE_SHARED=TRUE \
-        -DCMAKE_C_FLAGS_INIT="" \
-        -DCMAKE_CXX_FLAGS_INIT="" \
-        -DCMAKE_SHARED_LINKER_FLAGS="" \
-        -DLIBOMP_ASMFLAGS=-m64 \
-        ..
-    cmake --build .
-    cmake --install .
-)
-rm -f "$PREFIX/$ARCH-w64-mingw32/bin/"*iomp5md*
-rm -f "$PREFIX/$ARCH-w64-mingw32/lib/"*iomp5md*
-
 
 # ===========================================================================
 # Final packaging
