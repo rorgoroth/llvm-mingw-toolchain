@@ -11,9 +11,9 @@ REPO_ROOT="$(pwd)"
 CC=clang
 CXX=clang++
 LLVM_REPOSITORY="https://github.com/llvm/llvm-project.git"
-LLVM_VERSION="23.1.1"
+LLVM_VERSION="23.1.2"
 LLVM_TAG="llvmorg-$LLVM_VERSION"
-MINGW_W64_VERSION="aa96035ea5edd244502bd3e1550d4a801c12033e"
+MINGW_W64_VERSION="57b595039040eaa15bece85b7cc71d952281b269"
 # https://github.com/mingw-w64/mingw-w64/commits/master/
 PATCH_FILE="$REPO_ROOT/musl_stack_size.patch"
 ARCH="x86_64"
