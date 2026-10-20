@@ -23,7 +23,7 @@ jobs:
 
       - name: add_packages
         run: |
-          apk add alpine-sdk atool axel bash clang coreutils cmake curl gawk git libc++ linux-headers lld make openssh openssl python3 samurai wget zstd
+          apk add alpine-sdk bash clang coreutils cmake git libc++ linux-headers lld make python3 samurai zstd
         shell: alpine.sh --root {0}
 
       - name: run_build
@@ -31,12 +31,17 @@ jobs:
           sh build.sh
         shell: alpine.sh {0}
 
+      - name: get_version
+        id: version
+        run: |
+          echo "value=$(sed -n 's/^LLVM_VERSION="\(.*\)"$/\1/p' build.sh)" >> "$GITHUB_OUTPUT"
+
       - name: upload_packages
         id: upload_release
         uses: svenstaro/upload-release-action@latest
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: 23.1.4.tar.zst
-          tag: 23.1.4
+          file: ${{ steps.version.outputs.value }}.tar.zst
+          tag: ${{ steps.version.outputs.value }}
           overwrite: true
           file_glob: true

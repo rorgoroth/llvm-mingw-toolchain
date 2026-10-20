@@ -17,18 +17,16 @@ MINGW_W64_VERSION="344407dfc63fc495db714d0f79d291e99b85730e"
 # https://github.com/mingw-w64/mingw-w64/commits/master/
 PATCH_FILE="$REPO_ROOT/musl_stack_size.patch"
 ARCH="x86_64"
-TARGET_OSES="mingw32 mingw32uwp"
 DEFAULT_WIN32_WINNT="0x0A00"
 DEFAULT_MSVCRT="ucrt"
 DEST="llvm-x86_64-w64-mingw32"
 
-: ${CORES:=$(nproc 2>/dev/null)}
-: ${CORES:=$(sysctl -n hw.ncpu 2>/dev/null)}
-: ${CORES:=4}
+: "${CORES:=$(nproc 2>/dev/null)}"
+: "${CORES:=4}"
 
-for dep in git cmake clang ninja zstd coreutils; do
-    if ! command -v $dep >/dev/null; then
-        echo "$dep not installed. Please install it and retry" 1>&2
+for dep in git cmake clang ninja ld.lld patch python3 zstd coreutils; do
+    if ! command -v "$dep" >/dev/null; then
+        echo "$dep not found. Please install it and retry" 1>&2
         exit 1
     fi
 done
@@ -41,6 +39,12 @@ rm -f "$LLVM_VERSION.tar.zst"
 
 mkdir -p "$DEST"
 
+# llvm stamp file
+SRC_STAMP="$LLVM_TAG $MINGW_W64_VERSION $(cksum < "$PATCH_FILE")"
+if [ "$(cat llvm-project/.src-stamp 2>/dev/null)" != "$SRC_STAMP" ]; then
+    rm -rf llvm-project mingw-w64
+fi
+
 PREFIX="$(cd "$DEST" && pwd)"
 
 
@@ -52,6 +56,7 @@ echo "=== [1/8] Building LLVM/clang/lld ==="
 if [ ! -d llvm-project ]; then
     git clone --depth 1 --no-tags --branch "$LLVM_TAG" "$LLVM_REPOSITORY" llvm-project
     (cd llvm-project && patch -p1 < "$PATCH_FILE")
+    printf '%s\n' "$SRC_STAMP" > llvm-project/.src-stamp
 fi
 
 LLVM_BUILDDIR="build"
@@ -65,6 +70,7 @@ mkdir -p "llvm-project/llvm/$LLVM_BUILDDIR"
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_C_COMPILER=clang \
         -DCMAKE_CXX_COMPILER=clang++ \
+        -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
         -DLLVM_USE_LINKER=lld \
         -DLLVM_ENABLE_LTO=thin \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
@@ -80,7 +86,7 @@ mkdir -p "llvm-project/llvm/$LLVM_BUILDDIR"
         -DLLVM_ENABLE_LIBXML2=OFF \
         -DLLVM_ENABLE_ZLIB=OFF \
         -DLLVM_ENABLE_WARNINGS=OFF \
-        -DLLVM_TOOLCHAIN_TOOLS="llvm-ar;llvm-ranlib;llvm-objdump;llvm-rc;llvm-cvtres;llvm-nm;llvm-strings;llvm-readobj;llvm-dlltool;llvm-pdbutil;llvm-objcopy;llvm-strip;llvm-cov;llvm-profdata;llvm-addr2line;llvm-symbolizer;llvm-windres;llvm-ml;llvm-readelf;llvm-size;llvm-cxxfilt;llvm-lib" \
+        -DLLVM_TOOLCHAIN_TOOLS="llvm-ar;llvm-ranlib;llvm-objdump;llvm-rc;llvm-cvtres;llvm-nm;llvm-strings;llvm-readobj;llvm-dlltool;llvm-pdbutil;llvm-objcopy;llvm-strip;llvm-addr2line;llvm-symbolizer;llvm-windres;llvm-ml;llvm-readelf;llvm-size;llvm-cxxfilt;llvm-lib" \
         ..
     cmake --build .
     cmake --install . --strip
@@ -95,27 +101,21 @@ echo "=== [2/8] Stripping unwanted LLVM install files ==="
 
 (
     cd "$PREFIX/bin"
-    for i in amdgpu-arch bugpoint c-index-test clang-* clangd clangd-* darwin-debug diagtool dsymutil find-all-symbols git-clang-format hmaptool ld64.lld* llc lldb-* lli llvm-* modularize nvptx-arch obj2yaml offload-arch opt pp-trace sancov sanstats scan-build scan-view split-file verify-uselistorder wasm-ld yaml2* libclang.dll *LTO.dll *Remarks.dll *.bat; do
+    for i in amdgpu-arch bugpoint c-index-test clang-* darwin-debug diagtool dsymutil find-all-symbols git-clang-format hmaptool ld64.lld* llc lli llvm-* modularize nvptx-arch obj2yaml offload-arch opt pp-trace sancov sanstats split-file verify-uselistorder wasm-ld yaml2*; do
         basename=$i
         case $basename in
-        *.sh) ;;
         clang++|clang-*.*|clang-cpp) ;;
-        clang-format|git-clang-format) ;;
-        clangd) ;;
         clang-scan-deps) ;;
-        clang-tidy) ;;
-        clang-target-wrapper*|clang-scan-deps-wrapper*) ;;
         clang-*)
             suffix="${basename#*-}"
             if [ "$(echo $suffix | tr -d '[0-9]')" != "" ]; then
                 rm -f $i
             fi
             ;;
-        llvm-ar|llvm-cvtres|llvm-dlltool|llvm-nm|llvm-objdump|llvm-ranlib|llvm-rc|llvm-readobj|llvm-strings|llvm-pdbutil|llvm-objcopy|llvm-strip|llvm-cov|llvm-profdata|llvm-addr2line|llvm-symbolizer|llvm-wrapper|llvm-windres|llvm-ml|llvm-readelf|llvm-size|llvm-cxxfilt|llvm-lib) ;;
+        llvm-ar|llvm-cvtres|llvm-dlltool|llvm-nm|llvm-objdump|llvm-ranlib|llvm-rc|llvm-readobj|llvm-strings|llvm-pdbutil|llvm-objcopy|llvm-strip|llvm-addr2line|llvm-symbolizer|llvm-windres|llvm-ml|llvm-readelf|llvm-size|llvm-cxxfilt|llvm-lib) ;;
         ld64.lld|wasm-ld)
             [ -e $i ] && rm $i
             ;;
-        lldb|lldb-server|lldb-argdumper|lldb-instr|lldb-mi|lldb-vscode|lldb-dap) ;;
         *)
             if [ -f $i ]; then
                 rm $i
@@ -129,27 +129,16 @@ echo "=== [2/8] Stripping unwanted LLVM install files ==="
 
 rm -rf "$PREFIX/libexec"
 
-(
-    cd "$PREFIX/share/clang"
-    for i in *; do
-        case $i in
-        clang-format*) ;;
-        *) rm -rf $i ;;
-        esac
-    done
-)
+rm -rf "$PREFIX/share/clang" "$PREFIX/share/opt-viewer"
 
-rm -rf "$PREFIX/share/opt-viewer" "$PREFIX/share/scan-build" "$PREFIX/share/scan-view"
-rm -rf "$PREFIX/share/man/man1/scan-build*"
-rm -rf "$PREFIX/include/clang" "$PREFIX/include/clang-c" "$PREFIX/include/clang-tidy" "$PREFIX/include/lld" "$PREFIX/include/llvm" "$PREFIX/include/llvm-c" "$PREFIX/include/lldb"
+rm -rf "$PREFIX/include/clang" "$PREFIX/include/clang-c" "$PREFIX/include/lld" "$PREFIX/include/llvm" "$PREFIX/include/llvm-c"
 
 (
     cd "$PREFIX/lib"
-    rm -f *.dll.a
     rm -f lib*.a
-    for i in *.so* *.dylib* cmake; do
+    for i in *.so* cmake; do
         case $i in
-        liblldb*|libclang-cpp*|libLLVM*) ;;
+        libclang-cpp*|libLLVM*) ;;
         *) rm -rf $i ;;
         esac
     done
@@ -161,37 +150,33 @@ rm -rf "$PREFIX/include/clang" "$PREFIX/include/clang-c" "$PREFIX/include/clang-
 echo "=== [3/8] Installing target wrapper scripts/binaries ==="
 
 mkdir -p "$PREFIX/bin"
-cp wrappers/*-wrapper.sh "$PREFIX/bin"
-cp wrappers/mingw32-common.cfg "$PREFIX/bin"
-cp "wrappers/$ARCH-w64-windows-gnu.cfg" "$PREFIX/bin"
+# install(1) sets the mode explicitly, so the result doesn't depend on the
+# execute bits surviving in the checkout (zip/tarball copies lose them).
+install -m755 wrappers/*-wrapper.sh "$PREFIX/bin"
+install -m644 wrappers/mingw32-common.cfg "$PREFIX/bin"
+install -m644 "wrappers/$ARCH-w64-windows-gnu.cfg" "$PREFIX/bin"
 ln -sf "$ARCH-w64-windows-gnu.cfg" "$PREFIX/bin/$ARCH-pc-windows-gnu.cfg"
-
-$CC wrappers/clang-target-wrapper.c -o "$PREFIX/bin/clang-target-wrapper" -O2 -Wl,-s
-$CC wrappers/clang-scan-deps-wrapper.c -o "$PREFIX/bin/clang-scan-deps-wrapper" -O2 -Wl,-s
-$CC wrappers/llvm-wrapper.c -o "$PREFIX/bin/llvm-wrapper" -O2 -Wl,-s
 
 (
     cd "$PREFIX/bin"
-    for target_os in $TARGET_OSES; do
-        for exec in clang clang++ gcc g++ c++ as; do
-            ln -sf clang-target-wrapper.sh $ARCH-w64-$target_os-$exec
-        done
-        ln -sf clang-scan-deps $ARCH-w64-$target_os-clang-scan-deps
+    for exec in clang clang++ gcc g++ c++ as; do
+        ln -sf clang-target-wrapper.sh $ARCH-w64-mingw32-$exec
+    done
+    ln -sf clang-scan-deps $ARCH-w64-mingw32-clang-scan-deps
 
-        for exec in addr2line ar ranlib nm objcopy readelf size strings strip llvm-ar llvm-ranlib; do
-            case $exec in
-            llvm-*) link_target=$exec ;;
-            *) link_target=llvm-$exec ;;
-            esac
-            ln -sf $link_target $ARCH-w64-$target_os-$exec || true
-        done
+    for exec in addr2line ar ranlib nm objcopy readelf size strings strip llvm-ar llvm-ranlib; do
+        case $exec in
+        llvm-*) link_target=$exec ;;
+        *) link_target=llvm-$exec ;;
+        esac
+        ln -sf $link_target $ARCH-w64-mingw32-$exec || true
+    done
 
-        ln -sf llvm-windres $ARCH-w64-$target_os-windres
-        ln -sf llvm-dlltool $ARCH-w64-$target_os-dlltool
+    ln -sf llvm-windres $ARCH-w64-mingw32-windres
+    ln -sf llvm-dlltool $ARCH-w64-mingw32-dlltool
 
-        for exec in ld objdump; do
-            ln -sf $exec-wrapper.sh $ARCH-w64-$target_os-$exec
-        done
+    for exec in ld objdump; do
+        ln -sf $exec-wrapper.sh $ARCH-w64-mingw32-$exec
     done
 )
 
@@ -202,8 +187,14 @@ $CC wrappers/llvm-wrapper.c -o "$PREFIX/bin/llvm-wrapper" -O2 -Wl,-s
 echo "=== [4/8] Building mingw-w64 host tools (gendef, widl) ==="
 
 if [ ! -d mingw-w64 ]; then
-    git clone https://github.com/mingw-w64/mingw-w64
-    (cd mingw-w64 && git checkout "$MINGW_W64_VERSION")
+    mkdir mingw-w64
+    (
+        cd mingw-w64
+        git init -q .
+        git remote add origin https://github.com/mingw-w64/mingw-w64
+        git fetch --depth 1 origin "$MINGW_W64_VERSION"
+        git checkout -q FETCH_HEAD
+    )
 fi
 
 MAKE=make
@@ -211,7 +202,8 @@ command -v gmake >/dev/null && MAKE=gmake
 
 (
     cd mingw-w64/mingw-w64-tools/gendef
-    mkdir -p build
+    rm -rf build
+    mkdir build
     cd build
     ../configure --prefix="$PREFIX" --enable-silent-rules
     $MAKE -j$CORES
@@ -221,7 +213,8 @@ command -v gmake >/dev/null && MAKE=gmake
 )
 (
     cd mingw-w64/mingw-w64-tools/widl
-    mkdir -p build
+    rm -rf build
+    mkdir build
     cd build
     ../configure --prefix="$PREFIX" --target=$ARCH-w64-mingw32 \
         --with-widl-includedir="$PREFIX/generic-w64-mingw32/include" --enable-silent-rules
@@ -229,13 +222,6 @@ command -v gmake >/dev/null && MAKE=gmake
     $MAKE install-strip
     mkdir -p "$PREFIX/share/widl"
     install -m644 ../../../COPYING "$PREFIX/share/widl/COPYING.txt"
-)
-(
-    cd "$PREFIX/bin"
-    for target_os in $TARGET_OSES; do
-        [ "$target_os" = "mingw32" ] && continue
-        ln -sf $ARCH-w64-mingw32-widl $ARCH-w64-$target_os-widl
-    done
 )
 
 # ===========================================================================
@@ -248,7 +234,8 @@ unset CC
 
 (
     cd mingw-w64/mingw-w64-headers
-    mkdir -p build
+    rm -rf build
+    mkdir build
     cd build
     ../configure --prefix="$PREFIX/generic-w64-mingw32" \
         --enable-idl --with-default-win32-winnt=$DEFAULT_WIN32_WINNT --with-default-msvcrt=$DEFAULT_MSVCRT \
@@ -260,7 +247,8 @@ mkdir -p "$PREFIX/$ARCH-w64-mingw32"
 
 (
     cd mingw-w64/mingw-w64-crt
-    mkdir -p build-$ARCH
+    rm -rf build-$ARCH
+    mkdir build-$ARCH
     cd build-$ARCH
     ../configure --host=$ARCH-w64-mingw32 --prefix="$PREFIX/$ARCH-w64-mingw32" \
         --disable-lib32 --enable-lib64 --with-default-msvcrt=$DEFAULT_MSVCRT --enable-silent-rules
@@ -291,29 +279,10 @@ echo "=== [6/8] Building compiler-rt builtins ==="
 
 CLANG_RESOURCE_DIR="$("$PREFIX/bin/clang" --print-resource-dir)"
 
-cat <<EOF > is-ucrt.c
-#include <corecrt.h>
-#if !defined(_UCRT)
-#error not ucrt
-#endif
-EOF
-IS_UCRT=""
-if $ARCH-w64-mingw32-gcc -E is-ucrt.c > /dev/null 2>&1; then
-    IS_UCRT=1
-fi
-rm -f is-ucrt.c
-
 build_compiler_rt_arch() {
     src_dir="$1"
     build_suffix="$2"
     build_builtins="$3"
-
-    INSTALL_PREFIX="$CLANG_RESOURCE_DIR"
-    STAGE_TMP=""
-    if [ -h "$CLANG_RESOURCE_DIR/include" ]; then
-        STAGE_TMP="$(mktemp -d)"
-        INSTALL_PREFIX="$STAGE_TMP/install"
-    fi
 
     (
         cd llvm-project/compiler-rt
@@ -353,15 +322,9 @@ build_compiler_rt_arch() {
             -DCMAKE_ASM_FLAGS_INIT="" \
             "$src_dir"
         cmake --build .
-        cmake --install . --prefix "$INSTALL_PREFIX"
+        cmake --install .
     )
     mkdir -p "$PREFIX/$ARCH-w64-mingw32/bin"
-
-    if [ "$INSTALL_PREFIX" != "$CLANG_RESOURCE_DIR" ]; then
-        rm -rf "$INSTALL_PREFIX/include"
-        cp -r "$INSTALL_PREFIX/." "$CLANG_RESOURCE_DIR"
-        rm -rf "$STAGE_TMP"
-    fi
 }
 build_compiler_rt_arch "../lib/builtins" "" TRUE
 
@@ -423,7 +386,8 @@ echo "=== [8/8] Building winpthreads ==="
 
 (
     cd mingw-w64/mingw-w64-libraries/winpthreads
-    mkdir -p build-$ARCH
+    rm -rf build-$ARCH
+    mkdir build-$ARCH
     cd build-$ARCH
     arch_prefix="$PREFIX/$ARCH-w64-mingw32"
     ../configure --host=$ARCH-w64-mingw32 \
@@ -439,6 +403,10 @@ echo "=== [8/8] Building winpthreads ==="
     $MAKE install
 )
 mkdir -p "$PREFIX/$ARCH-w64-mingw32/share/mingw32"
+
+# libtool archive: records the build-time install path and only misleads
+# libtool-based projects (they prefer it over the .a).
+rm -f "$PREFIX/$ARCH-w64-mingw32/lib/libwinpthread.la"
 install -m644 mingw-w64/mingw-w64-libraries/winpthreads/COPYING \
     "$PREFIX/$ARCH-w64-mingw32/share/mingw32/COPYING.winpthreads.txt"
 
@@ -447,7 +415,6 @@ install -m644 mingw-w64/mingw-w64-libraries/winpthreads/COPYING \
 # ===========================================================================
 echo "=== Packaging ==="
 
-find "./$DEST" -name '*.dll.a' -print -delete
 tar -c -I 'zstd -18 -T0' -f "$LLVM_VERSION.tar.zst" "$DEST"
 
 echo "Done: $REPO_ROOT/$LLVM_VERSION.tar.zst"

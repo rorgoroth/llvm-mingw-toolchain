@@ -14,26 +14,38 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-get_dir() {
-    target="$1"
-    while [ -L "$target" ]; do
-        cd "$(dirname "$target")"
-        target="$(readlink "$(basename "$target")")"
-    done
-    cd "$(dirname "$target")"
-    pwd
-}
-
-DIR="$(get_dir "$0")"
-BASENAME="$(basename "$0")"
+# Find the directory the real script lives in, following symlinks. This runs
+# on every compiler invocation, so avoid spawning dirname/basename/pwd
+# subshells; readlink is only run once per symlink hop.
+self="$0"
+while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case $link in
+    /*) self="$link" ;;
+    *)
+        case $self in
+        */*) self="${self%/*}/$link" ;;
+        *) self="$link" ;;
+        esac
+        ;;
+    esac
+done
+case $self in
+*/*) DIR="${self%/*}" ;;
+*) DIR=. ;;
+esac
+# Keep it absolute, as callers may use a relative path to the wrapper.
+case $DIR in
+/*) ;;
+*) DIR="$PWD/$DIR" ;;
+esac
+BASENAME="${0##*/}"
 TARGET="${BASENAME%-*}"
 EXE="${BASENAME##*-}"
 DEFAULT_TARGET=x86_64-w64-mingw32
 if [ "$TARGET" = "$BASENAME" ]; then
     TARGET=$DEFAULT_TARGET
 fi
-ARCH="${TARGET%%-*}"
-TARGET_OS="${TARGET##*-}"
 
 # Check if trying to compile Ada; if we try to do this, invoking clang
 # would end up invoking <triplet>-gcc with the same arguments, which ends
@@ -52,7 +64,6 @@ if [ -n "$CCACHE" ]; then
     CCACHE=ccache
 fi
 
-# If changing this wrapper, change clang-target-wrapper.c accordingly.
 CLANG="$DIR/clang"
 FLAGS=""
 FLAGS="$FLAGS --start-no-unused-arguments"
@@ -67,32 +78,8 @@ c11)
     FLAGS="$FLAGS -std=c11"
     ;;
 esac
-LINKER_FLAGS=""
-case $TARGET_OS in
-mingw32uwp)
-    # the UWP target is for Windows 10
-    FLAGS="$FLAGS -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00"
-    # the UWP target can only use Windows Store APIs
-    FLAGS="$FLAGS -DWINAPI_FAMILY=WINAPI_FAMILY_APP"
-    # the Windows Store API only supports Windows Unicode (some rare ANSI ones are available)
-    FLAGS="$FLAGS -DUNICODE"
-    # Force the Universal C Runtime
-    FLAGS="$FLAGS -D_UCRT"
-
-    # Default linker flags; passed after any user specified -l options,
-    # to let the user specified libraries take precedence over these.
-
-    # add the minimum runtime to use for UWP targets
-    LINKER_FLAGS="$LINKER_FLAGS --start-no-unused-arguments"
-    LINKER_FLAGS="$LINKER_FLAGS -Wl,-lwindowsapp"
-    # This still requires that the toolchain (in particular, libc++.a) has
-    # been built targeting UCRT originally.
-    LINKER_FLAGS="$LINKER_FLAGS -Wl,-lucrtapp"
-    LINKER_FLAGS="$LINKER_FLAGS --end-no-unused-arguments"
-    ;;
-esac
-
 FLAGS="$FLAGS -target $TARGET"
 FLAGS="$FLAGS --end-no-unused-arguments"
 
-$CCACHE "$CLANG" $FLAGS "$@" $LINKER_FLAGS
+# exec: no lingering shell, and signals/exit status reach clang directly.
+exec $CCACHE "$CLANG" $FLAGS "$@"
