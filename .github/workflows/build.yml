@@ -10,10 +10,6 @@ jobs:
 
       - name: setup_alpine
         uses: rorgoroth/setup-alpine@develop
-        with:
-          branch: edge
-          extra-repositories: |
-            http://dl-cdn.alpinelinux.org/alpine/edge/testing
 
       - name: setup_git
         run: |
